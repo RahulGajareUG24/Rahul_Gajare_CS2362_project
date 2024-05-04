@@ -1,0 +1,23 @@
+1. Generate the CA’s Private Key
+openssl genrsa -out ca.key 2048
+
+2. Create and self-sign the CA Certificate
+openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -config ca.cnf
+Verify the CA Certificate
+openssl x509 -in ca.crt -text -noout
+Generate Private Keys and Certificate Signing Requests
+Used the configuration files to create the CSR
+Server:
+openssl genrsa -out server.key 2048
+openssl req -new -key server.key -out server.csr -config server.cnf
+Client:
+openssl genrsa -out client.key 2048
+openssl req -new -key client.key -out client.csr -config client.cnf
+Generate Self-Signed Certificates Using the CA
+Server:
+openssl x509 -req -days 365 -in server.csr -CA ca.crt -CAkey ca.key -set_serial 01 -out server.crt -extensions req_ext -extfile server.cnf
+Client:
+openssl x509 -req -days 365 -in client.csr -CA ca.crt -CAkey ca.key -set_serial 02 -out client.crt -extensions req_ext -extfile client.cnf
+Verify the Certificates
+openssl verify -CAfile ca.crt server.crt
+openssl verify -CAfile ca.crt client.crt

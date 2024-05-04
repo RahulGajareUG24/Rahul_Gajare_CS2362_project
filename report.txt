@@ -1,0 +1,97 @@
+Securing Client server communication against Man-in-the-Middle attack:
+Rahul Gajare.
+This project has enhanced an existing communication system that was utilizing unauthenticated Diffie-Hellman key exchange for encryption key establishment.
+in this project, I have implemented authenticated Diffie-Hellman key exchange mechanisms to safeguard against Man-in-the-Middle attacks, ensuring both the integrity and authenticity of the communication.
+in the authenticated Diffie-Hellman key exchange, Both client and server have RSA public-private key pairs.
+After the DH exchange of h1 and h2, both  sign a hash of the concatenated public values along with their respective identities using their private keys.
+After receiving the signature and certificate, both verify the signature using the public key extracted from the certificate.
+All steps are explained in detail below.
+authenticated Diffie-Hellman key exchange Implementation details:
+This communication is between server and client so there are two programmes, server.py and client.py
+SSL tls handshake:
+Server Setup for Mutual TLS:
+server creates an SSL context using "ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)".
+server loads its own certificate and private key using context.load_cert_chain(certfile="server.crt", keyfile="server.key")". This step is essential for the server to present its identity to clients.
+Additionally, server configures its context to load a CA certificate using context.load_verify_locations(cafile="ca.crt")". This CA certificate is used to verify the client's certificate, ensuring it is issued by a trusted authority.
+server sets "context.verify_mode = ssl.CERT_REQUIRED", which mandates that any connecting client must provide a valid certificate that the server can verify using the previously loaded CA certificate. This ensures that no anonymous or unauthenticated client can establish a connection.
+server socket is wrapped into an SSL socket with context.wrap_socket(server_socket, server_side=True), enabling SSL/TLS over the established socket connection. This SSL socket is used to securely accept client connections, where the TLS handshake including certificate verification takes place.
+Client Setup for Mutual TLS:
+client sets up an SSL context specifically configured for server authentication using 
+"ssl.create_default_context(ssl.Purpose.SERVER_AUTH)". This context ensures that the client is set up to verify the server's identity.
+client also loads its own certificate and key using "context.load_cert_chain(certfile="client.crt", keyfile="client.key")" to present its identity to the server during the TLS handshake.
+It loads the CA certificate with context.load_verify_locations(cafile="ca.crt")" to verify the server's certificate, ensuring server is also authenticated as a trusted entity.
+client initiates connection using "socket.create_connection((HOST, PORT))"
+then client  wraps this connection with SSL context to create a secure SSL socket
+"context.wrap_socket(sock, server_hostname=HOST)".
+During this wrapping, SSL/TLS handshake occurs where client and server exchange and verify each other’s certificates.
+During the TLS handshake, server and client present their certificates to each other.
+authenticity of these certificates is verified against the loaded CA certificates. If verification is Successful, it confirms that both parties are who they claim to be. if this fails, verification process would terminate the connection and prevent any further communication.
+I have provided the commands.txt file Which contains all the command that I have used to generate keys and certificates.
+Computation and Exchanging keys:
+server:
+a large prime p and a primitive root g is generated.
+p = randprime(2**127, 2**128)
+g = primitive_root(p)
+then, server's private key alpha is generated.
+alpha = randint(1, p-1)
+then, public value h1 is computed using g, p, and alpha.
+h1 = pow(g, alpha, p)
+then, these Parameters are sent to the client.
+then, client's public value h2 is Received.
+after that, shared secret K is computed using h2 and alpha.
+K = pow(h2, alpha, p)
+the AES key is derived from the shared secret K.
+client:
+p, g, and h1 is received from the server.
+then, client's private key beta is generated.
+beta = randint(1, p-1)
+then, public value h2 is computed using g, p, and beta.
+h2 = pow(g, beta, p)
+then, h2 is sent to the server.
+after that, shared secret K is computed using h1 and beta.
+K = pow(h1, beta, p)
+finally, AES key is derived from the shared secret K.
+digital signatures:
+server and client use an RSA key pair. The private key is used to generate a digital signature, and the public key is used by the counterpart to verify this signature.
+After the Diffie-Hellman parameters p, g and the public values h1 from server, h2 from client are exchanged, each side combines these values into a message and creates a hash of this message using SHA-256.
+Using its private RSA key, server and client sign this hash.
+This is how server signs
+pkcs1_15.new(server_key).sign(hash_value)
+Client also signs in a similar way.
+signature is then sent to Each other over the SSL/TLS connection. This happens immediately after the public values and DH parameters are exchanged. it ensures that both can verify the integrity of received values before proceeding further.
+ after receiving the signature along with the message, both compute the SHA-256 hash of the message to ensure consistency with the received signature.
+then, both  use public key of the counterpart extracted from the counterpart’s SSL/TLS certificate to verify the signature.
+This is done using pkcs1_15.new(RSA.import_key(client_public_key)).verify(hash_client, client_signature) for server and similarly for client.
+This confirms that message has not been altered since it was signed by the sender.
+Message integrity:
+After encrypting a message with AES, an HMAC is generated using AES key and encrypted message as inputs. This is achieved with the function compute_hmac(key, message), where key is derived from the Diffie-Hellman key exchange, and the message is the encrypted data.  HMAC generation uses SHA-256 as the hashing algorithm, providing strong resistance against collision and pre-image attacks.
+hmac_value = compute_hmac(aes_key, encrypted_msg)
+HMAC value is concatenated with the encrypted message and the initialization vector (IV) and sent over the network. This package ensures that both the integrity and the authenticity of the message can be verified by the receiver.
+conn.send(encrypted_msg + iv_msg + hmac_value)
+after receiving data, recipient first separates the encrypted message, IV, and HMAC. The recipient then recalculates the HMAC using same key and the encrypted message. If the recalculated HMAC matches the received HMAC, it confirms that the message has not been tampered with during transmission.
+if hmac.compare_digest(compute_hmac(aes_key, received_encrypted_msg), received_hmac):
+    proceed to decrypt the message
+    else:
+    raise an alert for possible tampering
+    AES Encryption:
+    AES key is derived from the shared secret established via the Diffie-Hellman key exchange, ensuring that only the communicating parties have access to it. This key is then used for both encrypting and decrypting messages.
+    aes_key = K.to_bytes(16, 'big')
+    Messages are encrypted using AES in CBC mode, which provides strong confidentiality. The IV is used to ensure that identical messages encrypted with the same key look different in ciphertext.
+    cipher = AES.new(aes_key, AES.MODE_CBC, iv_msg)
+    encrypted_msg = cipher.encrypt(pad(msg, BLOCK_SIZE))
+    decryption process requires the same IV that was used for encryption.
+    This IV is typically sent along with the encrypted message.
+    cipher = AES.new(aes_key, AES.MODE_CBC, received_iv)
+decrypted_msg = unpad(cipher.decrypt(received_encrypted_msg), BLOCK_SIZE)
+How this Communicationn is secured against Man-in-the-Middle attack?
+the client and the server authenticate each other using digital certificates.
+This mutual authentication ensures that both parties are indeed who they claim to be, preventing an attacker from impersonating either side of the communication.
+By loading and verifying certificates against a trusted certificate authority and setting ssl.CERT_REQUIRED, both the client and server ensure that the other party's certificate is valid and trusted.
+This check helps prevent MITM attacks where an attacker might use a forged or invalid certificate.
+After the Diffie-Hellman key exchange, client and the server sign a combination of the exchanged values and their Private keys.
+both of them verify the received signature using the public key extracted from the certificate of the sender.
+This ensures that the key exchange has not been tampered with by a third party. If an attacker has altered any of the exchanged key material, signature verification would fail.
+Apart from this, HMAC is used to ensure the integrity and authenticity of the messages.
+if HMAC values are mached, it confirms that the message has not been altered in transit and is from the legitimate sender. This method prevents an attacker from injecting or altering messages.
+conclusion:
+From the beginning to the end of communication, We are not giving any chance to  an attacker to alter or tamper anything. hence, we can say that this communication is secure against Man-in-the-Middle attack.
